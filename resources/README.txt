@@ -1,7 +1,7 @@
-Metti qui i tre eseguibili necessari alla compilazione (vedi README.md):
+Put here the 3 executables needed for the compilation (see README.md):
 
-- ffmpeg.exe   (build completa per Windows)
-- ffprobe.exe  (dalla stessa build di ffmpeg)
-- yt-dlp.exe   (da https://github.com/yt-dlp/yt-dlp/releases)
+- ffmpeg.exe   (complete build for Windows)
+- ffprobe.exe  (from the same build of ffmpeg)
+- yt-dlp.exe   (from https://github.com/yt-dlp/yt-dlp/releases)
 
-Non vengono caricati su GitHub perché superano il limite dei 100 MB.
+They arent uploaded on here because they exceed the 100MB limit.
