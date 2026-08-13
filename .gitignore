@@ -1,0 +1,9 @@
+build/
+dist/
+__pycache__/
+*.pyc
+
+# binari troppo grandi per GitHub: scaricarli e metterli qui prima di compilare
+resources/ffmpeg.exe
+resources/ffprobe.exe
+resources/yt-dlp.exe
