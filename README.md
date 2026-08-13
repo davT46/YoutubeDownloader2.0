@@ -1,55 +1,55 @@
 # YouTube Audio Downloader
 
-Applicazione desktop per convertire video YouTube in MP3, con supporto a playlist,
-download multipli in parallelo e gestione dei cookie.
+Desktop application to convert YouTube videos to MP3, with playlist support,
+parallel downloads and cookie management.
 
-## Funzionalità
+## Features
 
-- Conversione di video YouTube in MP3 (192K, migliore traccia audio disponibile)
-- Download di intere playlist o di singoli brani
-- Più URL incollati insieme, uno per riga
-- Due modalità: **Playlist** e **Single Songs**
-- Nella modalità **Playlist** puoi incollare insieme playlist e singoli video:
-  - le playlist vengono salvate in sottocartelle col nome della playlist
-  - i singoli video vengono salvati in una cartella chiamata **NA**
-- Download paralleli (12 thread di default)
-- Supporto cookie: file di cookie oppure cookie dal browser (Chrome, Firefox, Edge, Opera, Vivaldi, Brave)
-- Tema scuro/chiaro
-- Modalità Debug per vedere l'output completo di yt-dlp in caso di errori
-- Aggiornamento automatico di yt-dlp: una copia è inclusa nell'exe e viene
-  aggiornata da GitHub se disponibile una versione più recente
-- Singolo file .exe portatile: Python, FFmpeg, FFprobe e yt-dlp sono tutti inclusi
-- Scelta della cartella di salvataggio
+- Convert YouTube videos to MP3 (192K, best available audio track)
+- Download entire playlists or single tracks
+- Paste multiple URLs at once, one per line
+- Two modes: **Playlist** and **Single Songs**
+- In **Playlist** mode you can mix playlists and single videos:
+  - playlists are saved in subfolders named after the playlist
+  - single videos are saved in a folder called **NA**
+- Parallel downloads (12 threads by default)
+- Cookie support: cookie file or cookies from your browser (Chrome, Firefox, Edge, Opera, Vivaldi, Brave)
+- Dark/light theme
+- Debug Mode to see the full yt-dlp output in case of errors
+- Automatic yt-dlp updates: a copy is bundled in the exe and is
+  updated from GitHub whenever a newer version is available
+- Single portable .exe file: Python, FFmpeg, FFprobe and yt-dlp are all bundled
+- Choose the download folder
 
-## Utilizzo
+## Usage
 
-1. Incolla uno o più URL YouTube (uno per riga)
-2. Scegli la modalità **Playlist** o **Single Songs**
-3. (Opzionale) Seleziona un browser o un file di cookie per i contenuti protetti
-4. Premi **START DOWNLOAD**
-5. I file MP3 vengono salvati nella cartella scelta (default: `Desktop\downloaded_music`)
+1. Paste one or more YouTube URLs (one per line)
+2. Choose **Playlist** or **Single Songs** mode
+3. (Optional) Select a browser or a cookie file for protected content
+4. Press **START DOWNLOAD**
+5. MP3 files are saved to the folder you chose (default: `Desktop\downloaded_music`)
 
-Nella modalità **Playlist** puoi mischiare playlist e singoli video. I singoli
-video (quelli che non appartengono a una playlist) vengono salvati in una
-sottocartella chiamata **NA**: è il valore che yt-dlp usa quando un campo
-come il nome della playlist non è disponibile.
+In **Playlist** mode you can mix playlists and single videos. Single videos
+(those that don't belong to a playlist) are saved in a subfolder called
+**NA**: this is the value yt-dlp uses when a field like the playlist name
+is not available.
 
-## Scaricare l'eseguibile
+## Downloading the executable
 
-L'ultima versione compilata è disponibile nella sezione **Releases**:
-è un singolo file portatile (`YouTubeDownloader2.0.exe`), senza installazione.
+The latest build is available in the **Releases** section: it is a single
+portable file (`YouTubeDownloader2.0.exe`), no installation required.
 
-## Compilare da sorgente
+## Building from source
 
-Prerequisiti: Python 3 (testato con 3.13).
+Prerequisites: Python 3 (tested with 3.13).
 
-1. Clona il repository e installa le dipendenze:
+1. Clone the repository and install the dependencies:
 
    ```bash
    pip install -r requirements.txt
    ```
 
-2. Scarica e metti questi tre file nella cartella `resources`:
+2. Download and place these three files in the `resources` folder:
 
    ```
    resources/
@@ -58,45 +58,44 @@ Prerequisiti: Python 3 (testato con 3.13).
    └── yt-dlp.exe
    ```
 
-   - **FFmpeg / FFprobe**: build completa per Windows da
+   - **FFmpeg / FFprobe**: full Windows build from
      https://github.com/BtbN/FFmpeg-Builds (release tag `latest`, build `win64-gpl`,
-     basta estrarre `bin\ffmpeg.exe` e `bin\ffprobe.exe`)
-   - **yt-dlp.exe**: da https://github.com/yt-dlp/yt-dlp/releases
+     just extract `bin\ffmpeg.exe` and `bin\ffprobe.exe`)
+   - **yt-dlp.exe**: from https://github.com/yt-dlp/yt-dlp/releases
 
-3. Compila l'eseguibile (tutto viene incluso nel file: Python, FFmpeg, FFprobe, yt-dlp):
+3. Build the executable (everything is bundled in the file: Python, FFmpeg, FFprobe, yt-dlp):
 
    ```bash
    pyinstaller --clean YouTubeDownloader2.0.spec
    ```
 
-4. L'eseguibile si trova in `dist\YouTubeDownloader2.0.exe`
+4. The executable is at `dist\YouTubeDownloader2.0.exe`
 
-### Eseguire senza compilare
+### Running without building
 
-Per provare l'app direttamente dal sorgente:
+To try the app directly from the source:
 
 ```bash
 python youtube_audio_downloader_gui.py
 ```
 
-In questo caso `yt-dlp` deve essere raggiungibile dal PATH, e FFmpeg nella
-cartella `resources` accanto allo script.
+In this case `yt-dlp` must be reachable from the PATH, and FFmpeg in the
+`resources` folder next to the script.
 
-## Consigli
+## Tips
 
-- **max_workers**: in `youtube_audio_downloader_gui.py`, nel metodo
-  `run_download_logic`, è impostato `ThreadPoolExecutor(max_workers=12)`.
-  Questo numero decide quanti download avvengono in parallelo: **abbassalo su
-  PC con poca RAM o CPU, alzalo su PC più potenti** (ad esempio 4 su PC
-  modesti, 20+ su PC performanti).
-- Se un download fallisce, attiva **Debug Mode** per vedere l'output completo
-  di yt-dlp.
-- Per contenuti con limiti d'età, usa i cookie del browser o un file di cookie.
-- L'app salva un backup degli URL in `~\.yt-audio-downloader\saved_urls.txt`
-  e tiene aggiornato yt-dlp nella stessa cartella.
+- **max_workers**: in `youtube_audio_downloader_gui.py`, inside the
+  `run_download_logic` method, `ThreadPoolExecutor(max_workers=12)` is used.
+  This number controls how many downloads run in parallel: **lower it on
+  PCs with little RAM or CPU, raise it on more powerful PCs** (e.g. 4 on
+  modest PCs, 20+ on high-end ones).
+- If a download fails, enable **Debug Mode** to see the full yt-dlp output.
+- For age-restricted content, use browser cookies or a cookie file.
+- The app saves a backup of the URLs in `~\.yt-audio-downloader\saved_urls.txt`
+  and keeps yt-dlp updated in the same folder.
 
-## Note
+## Notes
 
-- I file binari (ffmpeg, ffprobe, yt-dlp) non sono inclusi nel repository
-  perché troppo grandi per GitHub: scaricarli e metterli in `resources` prima
-  di compilare.
+- The binary files (ffmpeg, ffprobe, yt-dlp) are not included in the repository
+  because they are too large for GitHub: download them and put them in
+  `resources` before building.
