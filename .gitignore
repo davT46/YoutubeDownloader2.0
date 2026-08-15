@@ -3,7 +3,10 @@ dist/
 __pycache__/
 *.pyc
 
-# binari troppo grandi per GitHub: scaricarli e metterli qui prima di compilare
-resources/ffmpeg.exe
-resources/ffprobe.exe
-resources/yt-dlp.exe
+# binaries too large for GitHub: download them before building
+windows/resources/ffmpeg.exe
+windows/resources/ffprobe.exe
+windows/resources/yt-dlp.exe
+linux/resources/ffmpeg
+linux/resources/ffprobe
+linux/resources/yt-dlp
