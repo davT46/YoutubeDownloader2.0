@@ -15,6 +15,7 @@ import shutil
 
 APP_VERSION = "2.0.1"
 NO_OUTPUT_TIMEOUT = 15 * 60  # seconds without any new output before a download is considered stuck
+MAX_LOG_LINES = 2000  # maximum lines kept in the status log before the oldest ones are trimmed
 
 
 def find_resource(relative_path):
@@ -27,7 +28,14 @@ def find_resource(relative_path):
 
     return os.path.join(base_path, relative_path)
 
-FFMPEG_PATH = find_resource(os.path.join('resources', 'ffmpeg.exe'))
+def find_ffmpeg():
+    # bundled copy first; fall back to ffmpeg on the PATH when running from source
+    bundled = find_resource(os.path.join('resources', 'ffmpeg.exe'))
+    if os.path.exists(bundled):
+        return bundled
+    return shutil.which('ffmpeg') or 'ffmpeg'
+
+FFMPEG_PATH = find_ffmpeg()
 
 def terminate_process(process):
     # kill yt-dlp and (on Windows) its child processes such as ffmpeg
@@ -53,7 +61,7 @@ def download_media(url, is_playlist, log, yt_dlp_path, save_dir, browser, cookie
     try:
         if cancel_event.is_set():
             log(f"Skipped (cancelled): {url}")
-            return False
+            return 'skipped'
 
         log(f"\nAnalyzing: {url}")
         output_template = (
@@ -62,7 +70,7 @@ def download_media(url, is_playlist, log, yt_dlp_path, save_dir, browser, cookie
             else os.path.join(save_dir, 'Single Songs', '%(title)s.%(ext)s')
         )
 
-        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
 
         command = [
             yt_dlp_path,
@@ -143,11 +151,11 @@ def download_media(url, is_playlist, log, yt_dlp_path, save_dir, browser, cookie
 
         if cancelled:
             log(f"Download cancelled for: {url}")
-            return False
+            return 'cancelled'
 
         if stalled:
             log(f"Download stalled for {url}: no output for {NO_OUTPUT_TIMEOUT // 60} minutes, it was terminated.")
-            return False
+            return 'failed'
 
         if process.returncode != 0:
             error_message = output.strip()
@@ -155,7 +163,7 @@ def download_media(url, is_playlist, log, yt_dlp_path, save_dir, browser, cookie
                 log(f"yt-dlp reported an error for {url}:\n{error_message}")
             else:
                 log(f"yt-dlp exited with code {process.returncode} for: {url}")
-            return False
+            return 'failed'
 
         # --ignore-errors lets yt-dlp exit 0 even when some items fail;
         # surface those failures instead of silently counting a success
@@ -164,13 +172,13 @@ def download_media(url, is_playlist, log, yt_dlp_path, save_dir, browser, cookie
             log(f"{len(error_lines)} yt-dlp error(s) while downloading {url}:")
             for line in error_lines[:20]:
                 log(f"  {line}")
-            return False
+            return 'failed'
 
-        return True
+        return 'success'
 
     except Exception as e:
         log(f"Unexpected error for {url}: {e}")
-        return False
+        return 'failed'
     finally:
         if process is not None:
             with active_processes['lock']:
@@ -181,7 +189,10 @@ class App(ctk.CTk):
         super().__init__()
         self.title(f"YouTube Audio Downloader v{APP_VERSION}")
         self.geometry("800x650")
-        ctk.set_appearance_mode("Dark")
+        self.settings = self._load_settings()
+        theme = self.settings.get('theme', 'Dark')
+        mode = self.settings.get('mode', 'Playlist')
+        ctk.set_appearance_mode(theme)
         ctk.set_default_color_theme("blue")
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -195,8 +206,8 @@ class App(ctk.CTk):
 
         self.mode_label = ctk.CTkLabel(self.controls_frame, text="Mode")
         self.mode_label.grid(row=0, column=0, padx=(5,0), pady=(5,0), sticky="w")
-        self.mode_selector = ctk.CTkComboBox(self.controls_frame, values=["Playlist", "Single Songs"], command=self.update_ui_for_mode, state="readonly")
-        self.mode_selector.set("Playlist")
+        self.mode_selector = ctk.CTkComboBox(self.controls_frame, values=["Playlist", "Single Songs"], command=self.on_mode_change, state="readonly")
+        self.mode_selector.set(mode)
         self.mode_selector.grid(row=1, column=0, padx=(5,10), pady=5, sticky="ew")
 
         self.browser_label = ctk.CTkLabel(self.controls_frame, text="Browser (for cookies)")
@@ -212,7 +223,10 @@ class App(ctk.CTk):
         self.url_text.bind("<FocusIn>", self.on_entry_focus_in)
         self.url_text.bind("<FocusOut>", self.on_entry_focus_out)
         self.theme_switch = ctk.CTkSwitch(self.controls_frame, text="Dark Mode", command=self.toggle_theme)
-        self.theme_switch.select()
+        if theme.lower() == 'dark':
+            self.theme_switch.select()
+        else:
+            self.theme_switch.deselect()
         self.theme_switch.grid(row=0, column=3, rowspan=2, padx=10, pady=5, sticky="e")
         self.log_frame = ctk.CTkFrame(self)
         self.log_frame.grid(row=1, column=0, padx=10, pady=5, sticky="nsew")
@@ -226,7 +240,7 @@ class App(ctk.CTk):
         self.path_frame.grid_columnconfigure(1, weight=1)
         path_label_title = ctk.CTkLabel(self.path_frame, text="Save to:")
         path_label_title.grid(row=0, column=0, padx=(5,10), pady=5, sticky="w")
-        self.download_path = os.path.join(os.path.expanduser('~'), 'Desktop', 'downloaded_music')
+        self.download_path = self.settings.get('download_path', os.path.join(os.path.expanduser('~'), 'Desktop', 'downloaded_music'))
         self.path_label = ctk.CTkLabel(self.path_frame, text=self.download_path, anchor="w", fg_color=ctk.ThemeManager.theme["CTkEntry"]["fg_color"], corner_radius=6, height=28)
         self.path_label.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
         self.browse_button = ctk.CTkButton(self.path_frame, text="Browse...", command=self.select_download_directory)
@@ -257,7 +271,7 @@ class App(ctk.CTk):
         self.download_button = ctk.CTkButton(self.bottom_frame, text="START DOWNLOAD", command=self.start_download, height=40, font=("", 14, "bold"))
         self.download_button.grid(row=1, column=2, padx=5, pady=5, sticky="e")
 
-        self.update_ui_for_mode("Playlist")
+        self.update_ui_for_mode(mode)
 
         # queues must exist before the update thread starts
         self.log_queue = queue.Queue()
@@ -265,8 +279,36 @@ class App(ctk.CTk):
         self.cancel_event = threading.Event()
         self.active_processes = {'lock': threading.Lock(), 'procs': set()}
         self.yt_dlp_path = None
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.check_for_updates()
         self.process_log_queue()
+
+    def on_mode_change(self, mode):
+        self.update_ui_for_mode(mode)
+        self.save_settings()
+
+    def _load_settings(self):
+        try:
+            settings_path = os.path.join(os.path.expanduser('~'), '.yt-audio-downloader', 'settings.json')
+            with open(settings_path, encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def save_settings(self):
+        try:
+            settings_dir = os.path.join(os.path.expanduser('~'), '.yt-audio-downloader')
+            os.makedirs(settings_dir, exist_ok=True)
+            settings_path = os.path.join(settings_dir, 'settings.json')
+            theme = "Dark" if self.theme_switch.get() == 1 else "Light"
+            with open(settings_path, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'theme': theme,
+                    'mode': self.mode_selector.get(),
+                    'download_path': self.download_path,
+                }, f, indent=2)
+        except Exception as e:
+            self.log(f"Error saving settings: {e}")
 
     def select_download_directory(self):
         path = filedialog.askdirectory(
@@ -276,6 +318,7 @@ class App(ctk.CTk):
         if path:
             self.download_path = path
             self.path_label.configure(text=self.download_path)
+            self.save_settings()
 
     def select_cookie_file(self):
         path = filedialog.askopenfilename(
@@ -337,11 +380,19 @@ class App(ctk.CTk):
 
             latest_version = data["tag_name"]
 
-            # if the local copy is already the latest, skip the download
-            if os.path.exists(self.yt_dlp_path) and self._local_yt_dlp_version() == latest_version:
-                self.log(f"yt-dlp is already up to date (version {latest_version}).")
-                self.set_status("Ready")
-                return
+            # if the local copy is already the latest, skip the download;
+            # also keep the existing copy if its version cannot be read,
+            # instead of re-downloading it on every startup
+            if os.path.exists(self.yt_dlp_path):
+                local_version = self._local_yt_dlp_version()
+                if local_version == latest_version:
+                    self.log(f"yt-dlp is already up to date (version {latest_version}).")
+                    self.set_status("Ready")
+                    return
+                if not local_version:
+                    self.log("Could not read the local yt-dlp version, keeping the existing copy.")
+                    self.set_status("Ready")
+                    return
 
             asset_url = asset["browser_download_url"]
             self.log(f"Found version {latest_version}. Downloading from {asset_url}...")
@@ -386,6 +437,7 @@ class App(ctk.CTk):
     def toggle_theme(self):
         mode = "dark" if self.theme_switch.get() == 1 else "light"
         ctk.set_appearance_mode(mode)
+        self.save_settings()
 
     def is_placeholder_text(self, text):
         return text == self.placeholder_playlist or text == self.placeholder_single
@@ -435,6 +487,11 @@ class App(ctk.CTk):
                 self.status_bar.configure(text=message)
         except queue.Empty:
             pass
+        line_count = int(self.status_widget.index("end-1c").split('.')[0])
+        if line_count > MAX_LOG_LINES:
+            self.status_widget.configure(state='normal')
+            self.status_widget.delete("1.0", f"{line_count - MAX_LOG_LINES}.0")
+            self.status_widget.configure(state='disabled')
         self.after(100, self.process_log_queue)
 
     def log(self, message):
@@ -457,6 +514,24 @@ class App(ctk.CTk):
             self.cancel_event.set()
             self.set_status("Cancelling...")
 
+    def _terminate_all_processes(self):
+        with self.active_processes['lock']:
+            procs = list(self.active_processes['procs'])
+        for process in procs:
+            terminate_process(process)
+
+    def on_close(self):
+        with self.active_processes['lock']:
+            running = bool(self.active_processes['procs'])
+        if running:
+            proceed = messagebox.askyesno("Exit", "Downloads are still running. Exit and terminate them?")
+            if not proceed:
+                return
+            self.cancel_event.set()
+            self._terminate_all_processes()
+        self.save_settings()
+        self.destroy()
+
     def start_download(self):
         if getattr(sys, 'frozen', False) and (not self.yt_dlp_path or not os.path.exists(self.yt_dlp_path)):
             messagebox.showerror("Error: yt-dlp not found",
@@ -476,6 +551,11 @@ class App(ctk.CTk):
         duplicates = len(raw_urls) - len(urls)
         if duplicates:
             self.log(f"Removed {duplicates} duplicate URL(s).")
+        filtered_urls = [url for url in urls if "youtube.com/" in url or "youtu.be/" in url]
+        invalid = len(urls) - len(filtered_urls)
+        if invalid:
+            self.log(f"Removed {invalid} line(s) that are not YouTube URLs.")
+        urls = filtered_urls
         if not urls:
             messagebox.showwarning("No valid URLs", "The entered text does not contain valid YouTube URLs.")
             return
@@ -517,6 +597,8 @@ class App(ctk.CTk):
     def run_download_logic(self, urls, is_playlist, yt_dlp_path, save_dir, browser, cookie_file, debug_mode, result_queue):
         log = self.log
         total_success = 0
+        processed = 0
+        skipped = 0
         try:
             with ThreadPoolExecutor(max_workers=12) as executor:
                 future_to_url = {
@@ -526,31 +608,43 @@ class App(ctk.CTk):
                 for future in as_completed(future_to_url):
                     url = future_to_url[future]
                     try:
-                        success = future.result()
-                        if success:
+                        result = future.result()
+                        if result == 'success':
                             log(f"Download completed successfully for: {url}")
                             total_success += 1
-                        else:
+                            processed += 1
+                        elif result == 'skipped':
+                            # already logged inside download_media
+                            skipped += 1
+                        elif result == 'cancelled':
+                            # already logged inside download_media
+                            processed += 1
+                        elif result == 'failed':
                             log(f"Download failed for: {url}")
+                            processed += 1
+                        else:
+                            log(f"Unexpected result for {url}: {result}")
+                            processed += 1
                     except Exception as exc:
                         log(f"Error downloading {url}: {exc}")
-            result_queue.put((total_success, len(urls)))
+                        processed += 1
+            result_queue.put((total_success, processed, skipped, len(urls)))
         except Exception as exc:
             log(f"Critical error in thread: {exc}")
-            result_queue.put((0, len(urls)))
+            result_queue.put((0, 0, 0, len(urls)))
 
     def check_thread(self, thread, result_queue):
         if thread.is_alive() and result_queue.empty():
             self.after(100, self.check_thread, thread, result_queue)
             return
         try:
-            total_success, total_urls = result_queue.get_nowait()
+            total_success, processed, skipped, total_urls = result_queue.get_nowait()
             if self.cancel_event.is_set():
-                self.log(f"\n--- OPERATION CANCELLED ---\n   URLs processed before cancelling: {total_urls}\n   Downloads completed successfully: {total_success}\n---------------------------------")
+                self.log(f"\n--- OPERATION CANCELLED ---\n   Downloads completed successfully: {total_success}\n   Downloads started: {processed}\n   Skipped before starting: {skipped}\n---------------------------------")
                 self.set_status(f"Cancelled: {total_success}/{total_urls} downloads completed.")
                 messagebox.showwarning("Cancelled", "The download was cancelled. Check the status window for details.")
             else:
-                self.log(f"\n--- OPERATION COMPLETED ---\n   URLs processed: {total_urls}\n   Downloads completed successfully: {total_success}\n---------------------------------")
+                self.log(f"\n--- OPERATION COMPLETED ---\n   URLs processed: {processed}\n   Downloads completed successfully: {total_success}\n---------------------------------")
                 self.set_status(f"Completed: {total_success}/{total_urls} downloads.")
                 messagebox.showinfo("Done!", "Download completed. Check the status window for details.")
         except queue.Empty:
