@@ -3,6 +3,7 @@
 import os
 
 app_dir = os.path.dirname(os.path.abspath(SPEC))
+root_dir = os.path.dirname(app_dir)
 
 
 def resource(name):
@@ -11,7 +12,7 @@ def resource(name):
 
 a = Analysis(
     [os.path.join(app_dir, 'youtube_audio_downloader_gui.py')],
-    pathex=[app_dir],
+    pathex=[app_dir, root_dir],
     binaries=[
         (resource('ffmpeg'), 'resources'),
         (resource('ffprobe'), 'resources'),

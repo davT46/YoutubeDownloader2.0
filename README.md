@@ -10,6 +10,12 @@ parallel downloads and cookie management. Available for **Windows** and
   build instructions in `windows/README.md`)
 - [`linux/`](linux/) — Linux version (single portable binary,
   build instructions in `linux/README.md`)
+- `youtube_audio_downloader_app.py` — single shared application used by
+  both platforms (each platform folder only keeps a small launcher, its
+  build files and its own `resources/`)
+- [`.github/workflows/build.yml`](.github/workflows/build.yml) — builds
+  both platforms and attaches the binaries to GitHub Releases on every
+  `v*` tag (and on push to `main`/manual run, artifacts only)
 
 ## Features
 
@@ -64,11 +70,11 @@ Prerequisites: Python 3 (tested with 3.13).
 
 ## Tips
 
-- **max_workers**: in `youtube_audio_downloader_gui.py`, inside the
-  `run_download_logic` method, `ThreadPoolExecutor(max_workers=12)` is used.
-  This number controls how many downloads run in parallel: **lower it on
-  PCs with little RAM or CPU, raise it on more powerful PCs** (e.g. 4 on
-  modest PCs, 20+ on high-end ones).
+- **Parallel downloads**: in the app UI, use the **Parallel downloads**
+  control to choose how many downloads run at the same time. Lower it on
+  PCs with little RAM or CPU, raise it on more powerful PCs (e.g. 4 on
+  modest PCs, 20+ on high-end ones). The value is saved with the other
+  settings in `~\.yt-audio-downloader\settings.json`.
 - If a download fails, enable **Debug Mode** to see the full yt-dlp output.
 - For age-restricted content, use browser cookies or a cookie file.
 - The app saves a backup of the URLs in `~\.yt-audio-downloader\saved_urls.txt`

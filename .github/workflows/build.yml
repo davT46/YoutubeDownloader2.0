@@ -1,0 +1,101 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: build-windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: install dependencies
+        run: pip install -r windows/requirements.txt
+
+      - name: download ffmpeg and ffprobe
+        shell: pwsh
+        run: |
+          $zip = "$env:TEMP\ffmpeg.zip"
+          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip" -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath "$env:TEMP\ffmpeg"
+          $bin = Get-ChildItem "$env:TEMP\ffmpeg" -Directory | Select-Object -First 1
+          Copy-Item (Join-Path $bin.FullName 'bin\ffmpeg.exe') windows/resources/ffmpeg.exe -Force
+          Copy-Item (Join-Path $bin.FullName 'bin\ffprobe.exe') windows/resources/ffprobe.exe -Force
+
+      - name: download yt-dlp
+        shell: pwsh
+        run: Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile windows/resources/yt-dlp.exe
+
+      - name: build with pyinstaller
+        working-directory: windows
+        run: pyinstaller --clean --noconfirm YouTubeDownloader2.0.spec
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: windows/dist/YouTubeDownloader2.0.exe
+
+  linux:
+    name: build-linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install system packages
+        run: sudo apt-get update && sudo apt-get install -y python3 python3-tk python3-venv python3-pip
+
+      - name: create virtual environment
+        run: python3 -m venv .venv
+
+      - name: install dependencies
+        run: .venv/bin/pip install -r linux/requirements.txt
+
+      - name: download ffmpeg and ffprobe
+        run: |
+          curl -fsSL -o /tmp/ffmpeg.tar.xz https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+          tar -xf /tmp/ffmpeg.tar.xz -C /tmp
+          cp "$(find /tmp -maxdepth 2 -type f -name ffmpeg | head -n 1)" linux/resources/ffmpeg
+          cp "$(find /tmp -maxdepth 2 -type f -name ffprobe | head -n 1)" linux/resources/ffprobe
+          chmod +x linux/resources/ffmpeg linux/resources/ffprobe
+
+      - name: download yt-dlp
+        run: |
+          curl -fsSL -o linux/resources/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp
+          chmod +x linux/resources/yt-dlp
+
+      - name: build with pyinstaller
+        working-directory: linux
+        run: ../.venv/bin/pyinstaller --clean --noconfirm YouTubeDownloader2.0.spec
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: linux/dist/YouTubeDownloader2.0
+
+  release:
+    name: publish-release
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/windows-build/YouTubeDownloader2.0.exe
+            artifacts/linux-build/YouTubeDownloader2.0
+          generate_release_notes: true

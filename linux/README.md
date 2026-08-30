@@ -93,11 +93,11 @@ In this case `yt-dlp` must be reachable from the PATH, and FFmpeg either in the
 
 ## Tips
 
-- **max_workers**: in `youtube_audio_downloader_gui.py`, inside the
-  `run_download_logic` method, `ThreadPoolExecutor(max_workers=12)` is used.
-  This number controls how many downloads run in parallel: **lower it on PCs
-  with little RAM or CPU, raise it on more powerful PCs** (e.g. 4 on modest
-  PCs, 20+ on high-end ones).
+- **Parallel downloads**: in the app UI, use the **Parallel downloads**
+  control to choose how many downloads run at the same time. Lower it on
+  PCs with little RAM or CPU, raise it on more powerful PCs (e.g. 4 on
+  modest PCs, 20+ on high-end ones). The value is saved with the other
+  settings in `~/.yt-audio-downloader/settings.json`.
 - If a download fails, enable **Debug Mode** to see the full yt-dlp output.
 - For age-restricted content, use browser cookies or a cookie file.
 - The app saves a backup of the URLs in `~/.yt-audio-downloader/saved_urls.txt`
