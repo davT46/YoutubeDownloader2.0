@@ -15,7 +15,7 @@ import queue
 import shutil
 import hashlib
 
-APP_VERSION = "2.0.2"
+APP_VERSION = "2.0.3"
 NO_OUTPUT_TIMEOUT = 15 * 60  # seconds without any new output before a download is considered stuck
 MAX_LOG_LINES = 2000  # maximum lines kept in the status log before the oldest ones are trimmed
 
