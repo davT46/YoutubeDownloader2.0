@@ -9,13 +9,20 @@ from tkinter import messagebox, filedialog
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import urllib.request
 import urllib.error
+import urllib.parse
 import json
 import queue
 import shutil
+import hashlib
 
 APP_VERSION = "2.0.2"
 NO_OUTPUT_TIMEOUT = 15 * 60  # seconds without any new output before a download is considered stuck
 MAX_LOG_LINES = 2000  # maximum lines kept in the status log before the oldest ones are trimmed
+
+# Optional SHA256 of the current bundled yt-dlp release, so the updater can
+# refuse a binary that does not match it. Leave empty to skip this check and
+# rely on the file-magic verification in _update_yt_dlp.
+YT_DLP_EXPECTED_SHA256 = ""
 
 # the folder containing the platform-specific resources/ directory; set by
 # the per-platform launcher when running from source
@@ -62,6 +69,21 @@ def find_ffmpeg():
     return shutil.which('ffmpeg') or binary_name('ffmpeg')
 
 
+def _is_youtube_url(url):
+    # accept only genuine YouTube hostnames, not arbitrary strings containing them
+    try:
+        parsed = urllib.parse.urlparse(url.strip())
+    except (ValueError, AttributeError):
+        return False
+    host = (parsed.hostname or '').lower()
+    hosts = ('youtube.com', 'www.youtube.com', 'm.youtube.com',
+             'youtube-nocookie.com', 'www.youtube-nocookie.com',
+             'youtu.be', 'music.youtube.com', 'www.music.youtube.com')
+    if host not in hosts:
+        return False
+    return parsed.scheme in ('http', 'https')
+
+
 def terminate_process(process):
     # kill yt-dlp and (on Windows) its child processes such as ffmpeg
     if process.poll() is not None:
@@ -96,8 +118,6 @@ def download_media(url, is_playlist, log, yt_dlp_path, save_dir, browser, cookie
             else os.path.join(save_dir, 'Single Songs', '%(title)s.%(ext)s')
         )
 
-        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
-
         command = [
             yt_dlp_path,
             '--format', 'bestaudio/best',
@@ -112,7 +132,6 @@ def download_media(url, is_playlist, log, yt_dlp_path, save_dir, browser, cookie
             '--fragment-retries', '15',
             '--extractor-retries', '10',
             '--throttled-rate', '100K',
-            '--user-agent', user_agent,
             '--ffmpeg-location', FFMPEG_PATH,
             '--encoding', 'utf-8',
         ]
@@ -478,10 +497,48 @@ class App(ctk.CTk):
             asset_url = asset["browser_download_url"]
             self.log(f"Found version {latest_version}. Downloading from {asset_url}...")
 
-            # download to a temp file first, then replace atomically
+            # download to a temp file first, then verify integrity before replacing
             request = urllib.request.Request(asset_url, headers={"User-Agent": f"YouTubeAudioDownloader/{APP_VERSION}"})
+            sha256 = hashlib.sha256()
             with urllib.request.urlopen(request, timeout=60) as response, open(tmp_path, 'wb') as out_file:
-                shutil.copyfileobj(response, out_file)
+                while True:
+                    chunk = response.read(1 << 16)
+                    if not chunk:
+                        break
+                    out_file.write(chunk)
+                    sha256.update(chunk)
+
+            # verify the downloaded binary is a valid executable before shipping it
+            expected_header = b'MZ' if sys.platform == 'win32' else b'\x7fELF'
+            try:
+                with open(tmp_path, 'rb') as f:
+                    magic = f.read(len(expected_header))
+            except OSError as e:
+                magic = b''
+                self.log(f"Could not read the downloaded yt-dlp for verification: {e}")
+            actual_sha = sha256.hexdigest()
+            if magic != expected_header:
+                self.log("Downloaded yt-dlp failed integrity check (bad file magic). Discarding update.")
+                self.set_status("Update failed: integrity check failed.")
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+                return
+            # enforce a known-good checksum when one is embedded at build time
+            if YT_DLP_EXPECTED_SHA256 and actual_sha != YT_DLP_EXPECTED_SHA256:
+                self.log("Downloaded yt-dlp failed checksum verification. Discarding update.")
+                self.set_status("Update failed: checksum mismatch.")
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+                return
+            if actual_sha == asset.get("digest"):
+                self.log(f"Verified checksum {actual_sha}.")
+            else:
+                self.log(f"Downloaded yt-dlp (sha={actual_sha}) - no known checksum to compare against.")
+
             os.replace(tmp_path, self.yt_dlp_path)
             ensure_executable(self.yt_dlp_path)
 
@@ -633,7 +690,7 @@ class App(ctk.CTk):
         duplicates = len(raw_urls) - len(urls)
         if duplicates:
             self.log(f"Removed {duplicates} duplicate URL(s).")
-        filtered_urls = [url for url in urls if "youtube.com/" in url or "youtu.be/" in url]
+        filtered_urls = [url for url in urls if _is_youtube_url(url)]
         invalid = len(urls) - len(filtered_urls)
         if invalid:
             self.log(f"Removed {invalid} line(s) that are not YouTube URLs.")
