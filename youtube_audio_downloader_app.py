@@ -344,7 +344,7 @@ class App(ctk.CTk):
         self.status_widget.pack(expand=True, fill="both")
 
         self.path_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.path_frame.grid(row=2, column=0, padx=10, pady=(5,10), sticky="ew")
+        self.path_frame.grid(row=4, column=0, padx=10, pady=(5,5), sticky="ew")
         self.path_frame.grid_columnconfigure(1, weight=1)
         path_label_title = ctk.CTkLabel(self.path_frame, text="Save to:")
         path_label_title.grid(row=0, column=0, padx=(5,10), pady=5, sticky="w")
@@ -355,7 +355,7 @@ class App(ctk.CTk):
         self.browse_button.grid(row=0, column=2, padx=(10,5), pady=5, sticky="e")
 
         self.cookie_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.cookie_frame.grid(row=3, column=0, padx=10, pady=(5,10), sticky="ew")
+        self.cookie_frame.grid(row=3, column=0, padx=10, pady=(5,5), sticky="ew")
         self.cookie_frame.grid_columnconfigure(1, weight=1)
         cookie_label_title = ctk.CTkLabel(self.cookie_frame, text="Cookie file (optional):")
         cookie_label_title.grid(row=0, column=0, padx=(5,10), pady=5, sticky="w")
