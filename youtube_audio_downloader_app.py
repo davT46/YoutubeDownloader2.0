@@ -814,6 +814,7 @@ class App(ctk.CTk):
         self.destroy()
 
     def start_download(self):
+        global FFMPEG_PATH
         if getattr(sys, 'frozen', False) and (not self.yt_dlp_path or not os.path.exists(self.yt_dlp_path)):
             messagebox.showerror("Error: yt-dlp not found",
                                  f"The '{binary_name('yt-dlp')}' executable was not found.\n\n"
@@ -872,7 +873,6 @@ class App(ctk.CTk):
         if not FFMPEG_PATH or not os.path.exists(FFMPEG_PATH):
             found = shutil.which('ffmpeg') or binary_name('ffmpeg')
             if found and os.path.exists(found):
-                global FFMPEG_PATH
                 FFMPEG_PATH = found
             else:
                 messagebox.showerror("FFmpeg not found",
