@@ -15,7 +15,7 @@ import queue
 import shutil
 import hashlib
 
-APP_VERSION = "2.0.3"
+APP_VERSION = "2.0.4"
 NO_OUTPUT_TIMEOUT = 15 * 60  # seconds without any new output before a download is considered stuck
 MAX_LOG_LINES = 2000  # maximum lines kept in the status log before the oldest ones are trimmed
 
@@ -23,6 +23,11 @@ MAX_LOG_LINES = 2000  # maximum lines kept in the status log before the oldest o
 # refuse a binary that does not match it. Leave empty to skip this check and
 # rely on the file-magic verification in _update_yt_dlp.
 YT_DLP_EXPECTED_SHA256 = ""
+
+# Repository info for app self-update checks
+APP_REPO_OWNER = "davT46"
+APP_REPO_NAME = "YoutubeDownloader2.0"
+GITHUB_API_RELEASES_LATEST = f"https://api.github.com/repos/{APP_REPO_OWNER}/{APP_REPO_NAME}/releases/latest"
 
 # the folder containing the platform-specific resources/ directory; set by
 # the per-platform launcher when running from source
@@ -322,8 +327,17 @@ class App(ctk.CTk):
         else:
             self.theme_switch.deselect()
         self.theme_switch.grid(row=0, column=3, rowspan=2, padx=10, pady=5, sticky="e")
+        self.progress_frame = ctk.CTkFrame(self)
+        self.progress_frame.grid(row=1, column=0, padx=10, pady=(0, 5), sticky="ew")
+        self.progress_frame.grid_columnconfigure(0, weight=1)
+        self.progress_label = ctk.CTkLabel(self.progress_frame, text="Ready", anchor="w")
+        self.progress_label.grid(row=0, column=0, padx=10, pady=(8, 2), sticky="ew")
+        self.progress_bar = ctk.CTkProgressBar(self.progress_frame)
+        self.progress_bar.grid(row=1, column=0, padx=10, pady=(2, 10), sticky="ew")
+        self.progress_bar.set(0)
+
         self.log_frame = ctk.CTkFrame(self)
-        self.log_frame.grid(row=1, column=0, padx=10, pady=5, sticky="nsew")
+        self.log_frame.grid(row=2, column=0, padx=10, pady=5, sticky="nsew")
         self.log_frame.grid_columnconfigure(0, weight=1)
         self.log_frame.grid_rowconfigure(0, weight=1)
         self.status_widget = ctk.CTkTextbox(self.log_frame, state='disabled', corner_radius=0)
@@ -351,10 +365,18 @@ class App(ctk.CTk):
         self.clear_cookie_button.grid(row=0, column=2, padx=(10,0), pady=5, sticky="e")
         self.browse_cookie_button = ctk.CTkButton(self.cookie_frame, text="Browse...", command=self.select_cookie_file)
         self.browse_cookie_button.grid(row=0, column=3, padx=(0,5), pady=5, sticky="e")
-        self.cookie_file_path = None
+        self.cookie_file_path = self.settings.get('cookie_file_path')
+        if self.cookie_file_path and not os.path.exists(self.cookie_file_path):
+            self.cookie_file_path = None
+        if self.cookie_file_path:
+            self.cookie_path_label.configure(text=self.cookie_file_path)
+            self.browser_selector.configure(state="disabled")
+            self.clear_cookie_button.configure(state="normal")
+        else:
+            self.cookie_file_path = None
 
         self.bottom_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.bottom_frame.grid(row=4, column=0, padx=10, pady=(5, 10), sticky="ew")
+        self.bottom_frame.grid(row=5, column=0, padx=10, pady=(5, 10), sticky="ew")
         self.bottom_frame.grid_columnconfigure(0, weight=1)
         self.status_bar = ctk.CTkLabel(self.bottom_frame, text="Ready", anchor="w", height=28)
         self.status_bar.grid(row=0, column=0, columnspan=3, padx=(5,10), pady=5, sticky="ew")
@@ -374,11 +396,15 @@ class App(ctk.CTk):
         # queues must exist before the update thread starts
         self.log_queue = queue.Queue()
         self.status_queue = queue.Queue()
+        self.progress_queue = queue.Queue()
         self.cancel_event = threading.Event()
         self.active_processes = {'lock': threading.Lock(), 'procs': set()}
         self.yt_dlp_path = None
+        self.total_urls_to_download = 0
+        self.completed_urls_count = 0
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.check_for_updates()
+        self.check_for_app_updates()
         self.process_log_queue()
 
     def on_mode_change(self, mode):
@@ -405,6 +431,7 @@ class App(ctk.CTk):
                     'mode': self.mode_selector.get(),
                     'download_path': self.download_path,
                     'max_workers': self.max_workers_spin.get(),
+                    'cookie_file_path': self.cookie_file_path,
                 }, f, indent=2)
         except Exception as e:
             self.log(f"Error saving settings: {e}")
@@ -430,12 +457,14 @@ class App(ctk.CTk):
             # a cookie file takes precedence over the browser cookies
             self.browser_selector.configure(state="disabled")
             self.clear_cookie_button.configure(state="normal")
+            self.save_settings()
 
     def clear_cookie_file(self):
         self.cookie_file_path = None
         self.cookie_path_label.configure(text="No file selected")
         self.clear_cookie_button.configure(state="disabled")
         self.browser_selector.configure(state="readonly")
+        self.save_settings()
 
     def _update_yt_dlp(self):
         # in a bundle use the bundled copy (then update it if possible);
@@ -566,6 +595,68 @@ class App(ctk.CTk):
         update_thread = threading.Thread(target=self._update_yt_dlp, daemon=True)
         update_thread.start()
 
+    def _parse_version(self, v):
+        try:
+            v = v.strip()
+            if v.startswith('v'):
+                v = v[1:]
+            parts = v.split('.')
+            out = []
+            for p in parts:
+                # strip prerelease/build
+                for sep in ['-', '+']:
+                    if sep in p:
+                        p = p.split(sep)[0]
+                        break
+                out.append(int(p))
+            while len(out) < 3:
+                out.append(0)
+            return tuple(out[:3])
+        except Exception:
+            return (0, 0, 0)
+
+    def check_for_app_updates(self):
+        thread = threading.Thread(target=self._check_for_app_updates_thread, daemon=True)
+        thread.start()
+
+    def _check_for_app_updates_thread(self):
+        try:
+            request = urllib.request.Request(
+                GITHUB_API_RELEASES_LATEST,
+                headers={"User-Agent": f"YouTubeAudioDownloader/{APP_VERSION}"},
+            )
+            with urllib.request.urlopen(request, timeout=20) as response:
+                data = json.loads(response.read())
+            tag = data.get('tag_name') or ''
+            latest = self._parse_version(tag)
+            current = self._parse_version(APP_VERSION)
+            if latest > current and tag:
+                self.log(f"New app version available: {tag} (current {APP_VERSION}).")
+                self.log("Download it from the GitHub Releases page.")
+                self.set_status(f"Update available: {tag}")
+                try:
+                    html_url = data.get('html_url') or f"https://github.com/{APP_REPO_OWNER}/{APP_REPO_NAME}/releases/latest"
+                    # non-blocking prompt
+                    self.after(0, lambda url=html_url: self._prompt_app_update(url, tag))
+                except Exception:
+                    pass
+            else:
+                self.log("App is up to date.")
+        except Exception as e:
+            self.log(f"Could not check for app updates: {e}")
+
+    def _prompt_app_update(self, url, tag):
+        try:
+            if messagebox.askyesno("Update available", f"A new version ({tag}) is available.\n\nOpen the GitHub Releases page to download it?"):
+                if sys.platform == 'win32':
+                    os.startfile(url)
+                elif sys.platform == 'darwin':
+                    subprocess.Popen(['open', url])
+                else:
+                    subprocess.Popen(['xdg-open', url])
+        except Exception:
+            pass
+
     def _local_yt_dlp_version(self):
         try:
             result = subprocess.run([self.yt_dlp_path, "--version"], capture_output=True, text=True, timeout=20)
@@ -610,6 +701,32 @@ class App(ctk.CTk):
         # through a queue so it is safe to call from background threads
         self.status_queue.put(message)
 
+    def update_progress(self, completed, total, text=None):
+        try:
+            if total <= 0:
+                self.progress_queue.put((0, "Ready"))
+                return
+            progress = max(0.0, min(1.0, float(completed) / float(total)))
+            if text is None:
+                text = f"Progress: {completed}/{total}"
+            self.progress_queue.put((progress, text))
+        except Exception:
+            pass
+
+    def _open_download_folder(self):
+        try:
+            path = self.download_path
+            if not os.path.exists(path):
+                os.makedirs(path, exist_ok=True)
+            if sys.platform == 'win32':
+                os.startfile(path)  # type: ignore
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', path])
+            else:
+                subprocess.Popen(['xdg-open', path])
+        except Exception as e:
+            self.log(f"Could not open download folder: {e}")
+
     def process_log_queue(self):
         try:
             while True:
@@ -618,6 +735,10 @@ class App(ctk.CTk):
                 self.status_widget.insert("end", message + "\n")
                 self.status_widget.configure(state='disabled')
                 self.status_widget.see("end")
+                try:
+                    self._append_log_to_file(message)
+                except Exception:
+                    pass
         except queue.Empty:
             pass
         try:
@@ -626,12 +747,33 @@ class App(ctk.CTk):
                 self.status_bar.configure(text=message)
         except queue.Empty:
             pass
+        try:
+            while True:
+                progress, text = self.progress_queue.get_nowait()
+                try:
+                    self.progress_bar.set(progress)
+                    self.progress_label.configure(text=text)
+                except Exception:
+                    pass
+        except queue.Empty:
+            pass
         line_count = int(self.status_widget.index("end-1c").split('.')[0])
         if line_count > MAX_LOG_LINES:
             self.status_widget.configure(state='normal')
             self.status_widget.delete("1.0", f"{line_count - MAX_LOG_LINES}.0")
             self.status_widget.configure(state='disabled')
         self.after(100, self.process_log_queue)
+
+    def _append_log_to_file(self, message):
+        try:
+            log_dir = os.path.join(os.path.expanduser('~'), '.yt-audio-downloader')
+            os.makedirs(log_dir, exist_ok=True)
+            log_path = os.path.join(log_dir, 'app.log')
+            timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(f"[{timestamp}] {message}\n")
+        except Exception:
+            pass
 
     def log(self, message):
         self.log_queue.put(message)
@@ -726,6 +868,22 @@ class App(ctk.CTk):
         # in development mode the update thread may not have set yt_dlp_path yet
         yt_dlp_path = self.yt_dlp_path or binary_name('yt-dlp')
 
+        # Validate FFmpeg availability early
+        if not FFMPEG_PATH or not os.path.exists(FFMPEG_PATH):
+            found = shutil.which('ffmpeg') or binary_name('ffmpeg')
+            if found and os.path.exists(found):
+                global FFMPEG_PATH
+                FFMPEG_PATH = found
+            else:
+                messagebox.showerror("FFmpeg not found",
+                                     "FFmpeg was not found in resources or on PATH.\n\n"
+                                     "Downloads will likely fail. Please place ffmpeg/ffprobe in resources/ or install FFmpeg.")
+                self.log("Warning: FFmpeg not found. Conversions may fail.")
+
+        self.total_urls_to_download = len(urls)
+        self.completed_urls_count = 0
+        self.update_progress(0, self.total_urls_to_download, f"Starting: 0/{self.total_urls_to_download}")
+
         result_queue = queue.Queue()
         thread = threading.Thread(
             target=self.run_download_logic,
@@ -740,6 +898,7 @@ class App(ctk.CTk):
         total_success = 0
         processed = 0
         skipped = 0
+        total = len(urls)
         try:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 future_to_url = {
@@ -757,6 +916,7 @@ class App(ctk.CTk):
                         elif result == 'skipped':
                             # already logged inside download_media
                             skipped += 1
+                            processed += 1
                         elif result == 'cancelled':
                             # already logged inside download_media
                             processed += 1
@@ -769,6 +929,10 @@ class App(ctk.CTk):
                     except Exception as exc:
                         log(f"Error downloading {url}: {exc}")
                         processed += 1
+                    try:
+                        self.update_progress(processed, total, f"Progress: {processed}/{total} ({total_success} ok)")
+                    except Exception:
+                        pass
             result_queue.put((total_success, processed, skipped, len(urls)))
         except Exception as exc:
             log(f"Critical error in thread: {exc}")
@@ -783,29 +947,60 @@ class App(ctk.CTk):
             if self.cancel_event.is_set():
                 self.log(f"\n--- OPERATION CANCELLED ---\n   Downloads completed successfully: {total_success}\n   Downloads started: {processed}\n   Skipped before starting: {skipped}\n---------------------------------")
                 self.set_status(f"Cancelled: {total_success}/{total_urls} downloads completed.")
+                self.update_progress(processed, total_urls if total_urls else processed, f"Cancelled: {processed}/{total_urls}")
                 messagebox.showwarning("Cancelled", "The download was cancelled. Check the status window for details.")
+                try:
+                    if messagebox.askyesno("Open folder", "Open the download folder?"):
+                        self._open_download_folder()
+                except Exception:
+                    pass
             else:
                 self.log(f"\n--- OPERATION COMPLETED ---\n   URLs processed: {processed}\n   Downloads completed successfully: {total_success}\n---------------------------------")
                 self.set_status(f"Completed: {total_success}/{total_urls} downloads.")
+                self.update_progress(processed, total_urls if total_urls else processed, f"Completed: {total_success}/{total_urls}")
                 messagebox.showinfo("Done!", "Download completed. Check the status window for details.")
+                try:
+                    if messagebox.askyesno("Open folder", "Open the download folder?"):
+                        self._open_download_folder()
+                except Exception:
+                    pass
         except queue.Empty:
             self.log("Critical error in thread: the download finished without a result.")
             self.set_status("Critical error.")
+            self.update_progress(1, 1, "Error")
             messagebox.showerror("Critical Error", "An error occurred during the download.")
         finally:
             self.set_controls_state("normal")
 
     def set_controls_state(self, state):
         for widget in [self.download_button, self.mode_selector, self.browser_selector, self.url_text, self.theme_switch, self.browse_button, self.browse_cookie_button]:
-            widget.configure(state=state)
-        self.max_workers_spin.set_state(state)
+            try:
+                widget.configure(state=state)
+            except Exception:
+                pass
+        try:
+            self.max_workers_spin.set_state(state)
+        except Exception:
+            pass
         if state == "normal":
             # restore the proper non-editable combobox states and the
             # cookie/browser mutual exclusion
-            self.mode_selector.configure(state="readonly")
-            self.browser_selector.configure(state="disabled" if self.cookie_file_path else "readonly")
-            self.clear_cookie_button.configure(state="normal" if self.cookie_file_path else "disabled")
-            self.cancel_button.configure(state="disabled")
+            try:
+                self.mode_selector.configure(state="readonly")
+            except Exception:
+                pass
+            try:
+                self.browser_selector.configure(state="disabled" if self.cookie_file_path else "readonly")
+            except Exception:
+                pass
+            try:
+                self.clear_cookie_button.configure(state="normal" if self.cookie_file_path else "disabled")
+            except Exception:
+                pass
+            try:
+                self.cancel_button.configure(state="disabled")
+            except Exception:
+                pass
 
 
 def run_app(app_dir):
