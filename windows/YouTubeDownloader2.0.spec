@@ -18,6 +18,7 @@ a = Analysis(
         (resource('ffmpeg.exe'), 'resources'),
         (resource('ffprobe.exe'), 'resources'),
         (resource('yt-dlp.exe'), 'resources'),
+        (os.path.join(root_dir, 'youtube_audio_downloader_app.py'), '.'),
     ],
     hiddenimports=[],
     hookspath=[],
