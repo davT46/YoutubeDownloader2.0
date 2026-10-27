@@ -294,7 +294,7 @@ class App(ctk.CTk):
         ctk.set_appearance_mode(theme)
         ctk.set_default_color_theme("blue")
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=1)
         self.placeholder_playlist = "https://www.youtube.com/playlist?list=..."
         self.placeholder_single = "https://www.youtube.com/watch?v=..."
         self.placeholder_color = "gray50"
