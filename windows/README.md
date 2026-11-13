@@ -6,20 +6,22 @@ parallel downloads and cookie management.
 ## Features
 
 - Convert YouTube videos to MP3 (192K, best available audio track)
-- Download entire playlists or single tracks
+- Embedded ID3 metadata (artist, title, album, date) and album thumbnail art
+- Download entire playlists (with sequential track numbering) or single tracks
 - Paste multiple URLs at once, one per line
+- "Load Saved" button to restore previous URLs with one click
 - Two modes: **Playlist** and **Single Songs**
 - In **Playlist** mode you can mix playlists and single videos:
   - playlists are saved in subfolders named after the playlist
-  - single videos are saved in a folder called **NA**
-- Parallel downloads (12 threads by default)
+  - single videos are saved in a folder called **Single Songs**
+- Parallel downloads (configurable, 4 threads by default)
 - Cookie support: cookie file or cookies from your browser (Chrome, Firefox, Edge, Opera, Vivaldi, Brave)
 - Dark/light theme
 - Debug Mode to see the full yt-dlp output in case of errors
 - Automatic yt-dlp updates: a copy is bundled in the exe and is
   updated from GitHub whenever a newer version is available
 - Single portable .exe file: Python, FFmpeg, FFprobe and yt-dlp are all bundled
-- Choose the download folder
+- Choose the download folder with direct "Open Folder" button
 
 ## Usage
 
@@ -31,8 +33,7 @@ parallel downloads and cookie management.
 
 In **Playlist** mode you can mix playlists and single videos. Single videos
 (those that don't belong to a playlist) are saved in a subfolder called
-**NA**: this is the value yt-dlp uses when a field like the playlist name
-is not available.
+**Single Songs**.
 
 ## Downloading the executable
 

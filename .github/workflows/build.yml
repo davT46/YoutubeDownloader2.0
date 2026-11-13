@@ -23,6 +23,9 @@ jobs:
       - name: install dependencies
         run: pip install -r windows/requirements.txt
 
+      - name: run unit tests
+        run: python -m unittest discover tests
+
       - name: download ffmpeg and ffprobe
         shell: pwsh
         run: |
@@ -60,6 +63,9 @@ jobs:
 
       - name: install dependencies
         run: .venv/bin/pip install -r linux/requirements.txt
+
+      - name: run unit tests
+        run: .venv/bin/python -m unittest discover tests
 
       - name: download ffmpeg and ffprobe
         run: |
